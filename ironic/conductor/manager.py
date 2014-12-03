@@ -129,11 +129,11 @@ conductor_opts = [
                    default=1,
                    help='Seconds to sleep between node lock attempts.'),
         cfg.BoolOpt('send_sensor_data',
-                   default=False,
+                   default=True,
                    help='Enable sending sensor data message via the '
                         'notification bus'),
         cfg.IntOpt('send_sensor_data_interval',
-                   default=600,
+                   default=2,
                    help='Seconds between conductor sending sensor data message'
                         ' to ceilometer via the notification bus.'),
         cfg.ListOpt('send_sensor_data_types',
@@ -1198,8 +1198,7 @@ class ConductorManager(periodic_task.PeriodicTasks):
 
         filters = {'associated': True}
         columns = ['uuid', 'driver', 'instance_uuid']
-        node_list = self.dbapi.get_nodeinfo_list(columns=columns,
-                                                 filters=filters)
+        node_list = self.dbapi.get_nodeinfo_list(columns=columns)
 
         for (node_uuid, driver, instance_uuid) in node_list:
             # only handle the nodes mapped to this conductor
