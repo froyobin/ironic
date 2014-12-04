@@ -133,14 +133,32 @@ conductor_opts = [
                    help='Enable sending sensor data message via the '
                         'notification bus'),
         cfg.IntOpt('send_sensor_data_interval',
-                   default=2,
+                   default=6,
                    help='Seconds between conductor sending sensor data message'
                         ' to ceilometer via the notification bus.'),
         cfg.ListOpt('send_sensor_data_types',
+                   default=['Temperature,Fan,Voltage,Current'],
+                   help='List of comma separated metric types which need to be'
+                        ' sent to Ceilometer. The default value, "ALL", is a '
+                        'special value meaning send all the sensor data.'
+                        ),
+        cfg.BoolOpt('send_sel_data',
+                   default=False,
+                   help='Enable sending system event data message via the '
+                        'notification bus'),
+        cfg.IntOpt('send_sel_data_interval',
+                   default=2,
+                   help='Seconds between conductor sending system event data message'
+                        ' to ceilometer via the notification bus.'),
+        cfg.ListOpt('send_sel_data_types',
                    default=['ALL'],
                    help='List of comma separated metric types which need to be'
                         ' sent to Ceilometer. The default value, "ALL", is a '
                         'special value meaning send all the sensor data.'
+                        ),
+        cfg.ListOpt('send_SEL',
+                   default=['ALL'],
+                   help='List of com'
                         ),
         cfg.IntOpt('sync_local_state_interval',
                    default=180,
@@ -1239,11 +1257,67 @@ class ConductorManager(periodic_task.PeriodicTasks):
                 LOG.warn(_LW("Failed to get sensor data for node %(node)s. "
                     "Error: %(error)s"), {'node': node_uuid, 'error': str(e)})
             else:
-                message['payload'] = self._filter_out_unsupported_types(
-                                                              sensors_data)
+                message['payload'] = self._filter_out_unsupported_types(sensors_data)
                 if message['payload']:
                     self.notifier.info(context, "hardware.ipmi.metrics",
                                        message)
+
+    @periodic_task.periodic_task(
+            spacing=CONF.conductor.send_sel_data_interval)
+    def _send_sel_data(self, context):
+        # do nothing if send_sensor_data option is False
+        if not CONF.conductor.send_sel_data:
+            return
+
+        filters = {'associated': True}
+        columns = ['uuid', 'driver', 'instance_uuid']
+        node_list = self.dbapi.get_nodeinfo_list(columns=columns)
+
+        for (node_uuid, driver, instance_uuid) in node_list:
+            # only handle the nodes mapped to this conductor
+            if not self._mapped_to_this_conductor(node_uuid, driver):
+                continue
+
+            # populate the message which will be sent to ceilometer
+            message = {'message_id': ironic_utils.generate_uuid(),
+                       'instance_uuid': instance_uuid,
+                       'node_uuid': node_uuid,
+                       'timestamp': datetime.datetime.utcnow(),
+                       'event_type': 'hardware.ipmi.sel.metrics.update'}
+
+            try:
+                with task_manager.acquire(context,
+                                          node_uuid,
+                                          shared=True) as task:
+                    task.driver.management.validate(task)
+                    sel_data = task.driver.management.get_sel_data(
+                        task)
+            except NotImplementedError:
+                LOG.warn(_LW('get_sensors_data is not implemented for driver'
+                    ' %(driver)s, node_uuid is %(node)s'),
+                    {'node': node_uuid, 'driver': driver})
+            except exception.FailedToParseSensorData as fps:
+                LOG.warn(_LW("During get_sensors_data, could not parse "
+                    "sensor data for node %(node)s. Error: %(err)s."),
+                    {'node': node_uuid, 'err': str(fps)})
+            except exception.FailedToGetSensorData as fgs:
+                LOG.warn(_LW("During get_sensors_data, could not get "
+                    "sensor data for node %(node)s. Error: %(err)s."),
+                    {'node': node_uuid, 'err': str(fgs)})
+            except exception.NodeNotFound:
+                LOG.warn(_LW("During send_sensor_data, node %(node)s was not "
+                           "found and presumed deleted by another process."),
+                           {'node': node_uuid})
+            except Exception as e:
+                LOG.warn(_LW("Failed to get sensor data for node %(node)s. "
+                    "Error: %(error)s"), {'node': node_uuid, 'error': str(e)})
+            else:
+                # message['payload'] = self._filter_out_unsupported_types(sensors_data)
+                message['payload'] = sel_data
+                if message['payload']:
+                    self.notifier.info(context, "hardware.ipmi.sel.metrics",
+                                       message)
+
 
     def _filter_out_unsupported_types(self, sensors_data):
         # support the CONF.send_sensor_data_types sensor types only

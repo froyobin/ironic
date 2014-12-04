@@ -55,7 +55,7 @@ class IpmiBareDriver(base.BaseDriver):
                         'second_method': self.b}
         self.vendor = utils.MixinVendorInterface(self.mapping)
         self.console = fake.FakeConsole()
-        self.management = fake.FakeManagement()
+        self.management = ipmitool.IPMIManagement()
 
 class FakeIPMIToolDriver(base.BaseDriver):
     """Example implementation of a Driver."""

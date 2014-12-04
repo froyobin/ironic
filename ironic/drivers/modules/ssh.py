@@ -690,3 +690,6 @@ class SSHManagement(base.ManagementInterface):
 
         """
         raise NotImplementedError()
+
+    def get_sel_data(self, task):
+        raise NotImplementedError()

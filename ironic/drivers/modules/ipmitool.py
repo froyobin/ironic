@@ -757,6 +757,36 @@ class IPMIManagement(base.ManagementInterface):
         response['persistent'] = 'Options apply to all future boots' in out
         return response
 
+    def get_sel_data(self,task):
+
+        """Get sel data.
+
+        :param task: a TaskManager instance.
+        :raises: FailedToGetSelData when getting the sel data fails.
+        :raises: FailedToParseSelData when parsing sel data fails.
+        :raises: InvalidParameterValue if required ipmi parameters are missing
+        :raises: MissingParameterValue if a required parameter is missing.
+        :returns: returns a dict of sel data group by sel type.
+
+        """
+        driver_info = _parse_driver_info(task.node)
+        # with '-v' option, we can get the entire sensor data including the
+        # extended sensor informations
+        cmd = "sel list"
+        try:
+            out, err = _exec_ipmitool(driver_info, cmd)
+        except (exception.PasswordFileFailedToCreate,
+                processutils.ProcessExecutionError) as e:
+            raise exception.FailedToGetSensorData(node=task.node.uuid,
+                                                  error=e)
+
+        # return _parse_ipmi_sensors_data(task.node, out)
+        print out
+
+        return out
+        # raise NotImplementedError()
+
+
     def get_sensors_data(self, task):
         """Get sensors data.
 
