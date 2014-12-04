@@ -781,7 +781,6 @@ class IPMIManagement(base.ManagementInterface):
                                                   error=e)
 
         # return _parse_ipmi_sensors_data(task.node, out)
-        print out
 
         return out
         # raise NotImplementedError()
