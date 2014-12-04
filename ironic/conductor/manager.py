@@ -133,11 +133,11 @@ conductor_opts = [
                    help='Enable sending sensor data message via the '
                         'notification bus'),
         cfg.IntOpt('send_sensor_data_interval',
-                   default=6,
+                   default=10,
                    help='Seconds between conductor sending sensor data message'
                         ' to ceilometer via the notification bus.'),
         cfg.ListOpt('send_sensor_data_types',
-                   default=['Temperature,Fan,Voltage,Current'],
+                   default=['all'],
                    help='List of comma separated metric types which need to be'
                         ' sent to Ceilometer. The default value, "ALL", is a '
                         'special value meaning send all the sensor data.'
@@ -147,11 +147,11 @@ conductor_opts = [
                    help='Enable sending system event data message via the '
                         'notification bus'),
         cfg.IntOpt('send_sel_data_interval',
-                   default=2,
+                   default=4,
                    help='Seconds between conductor sending system event data message'
                         ' to ceilometer via the notification bus.'),
         cfg.ListOpt('send_sel_data_types',
-                   default=['ALL'],
+                   default=['all'],
                    help='List of comma separated metric types which need to be'
                         ' sent to Ceilometer. The default value, "ALL", is a '
                         'special value meaning send all the sensor data.'
@@ -1228,7 +1228,25 @@ class ConductorManager(periodic_task.PeriodicTasks):
                        'instance_uuid': instance_uuid,
                        'node_uuid': node_uuid,
                        'timestamp': datetime.datetime.utcnow(),
-                       'event_type': 'hardware.ipmi.metrics.update'}
+                       'event_type': 'hardware.ipmi.temperature'}
+
+            message2 = {'message_id': ironic_utils.generate_uuid(),
+                       'instance_uuid': instance_uuid,
+                       'node_uuid': node_uuid,
+                       'timestamp': datetime.datetime.utcnow(),
+                       'event_type': 'hardware.ipmi.voltage'}
+
+            message3 = {'message_id': ironic_utils.generate_uuid(),
+                       'instance_uuid': instance_uuid,
+                       'node_uuid': node_uuid,
+                       'timestamp': datetime.datetime.utcnow(),
+                       'event_type': 'hardware.ipmi.fan'}
+
+            message4 = {'message_id': ironic_utils.generate_uuid(),
+                       'instance_uuid': instance_uuid,
+                       'node_uuid': node_uuid,
+                       'timestamp': datetime.datetime.utcnow(),
+                       'event_type': 'hardware.ipmi.current'}
 
             try:
                 with task_manager.acquire(context,
@@ -1257,10 +1275,28 @@ class ConductorManager(periodic_task.PeriodicTasks):
                 LOG.warn(_LW("Failed to get sensor data for node %(node)s. "
                     "Error: %(error)s"), {'node': node_uuid, 'error': str(e)})
             else:
-                message['payload'] = self._filter_out_unsupported_types(sensors_data)
+
+                message['payload'] = self._filter_out_unsupported_types_key(sensors_data, 'temperature')
+
+
                 if message['payload']:
-                    self.notifier.info(context, "hardware.ipmi.metrics",
+                    self.notifier.info(context, "hardware.ipmi.temperature",
                                        message)
+                message2['payload'] = self._filter_out_unsupported_types_key(sensors_data, 'voltage')
+
+                if message2['payload']:
+                    self.notifier.info(context, "hardware.ipmi.voltage",
+                                       message2)
+
+                message3['payload'] = self._filter_out_unsupported_types_key(sensors_data, 'fan')
+                if message3['payload']:
+                    self.notifier.info(context, "hardware.ipmi.fan",
+                                       message3)
+
+                message4['payload'] = self._filter_out_unsupported_types_key(sensors_data, 'current')
+                if message4['payload']:
+                    self.notifier.info(context, "hardware.ipmi.current",
+                                       message4)
 
     @periodic_task.periodic_task(
             spacing=CONF.conductor.send_sel_data_interval)
@@ -1283,7 +1319,7 @@ class ConductorManager(periodic_task.PeriodicTasks):
                        'instance_uuid': instance_uuid,
                        'node_uuid': node_uuid,
                        'timestamp': datetime.datetime.utcnow(),
-                       'event_type': 'hardware.ipmi.sel.metrics.update'}
+                       'event_type': 'hardware.ipmi.temperature'}
 
             try:
                 with task_manager.acquire(context,
@@ -1315,8 +1351,14 @@ class ConductorManager(periodic_task.PeriodicTasks):
                 # message['payload'] = self._filter_out_unsupported_types(sensors_data)
                 message['payload'] = sel_data
                 if message['payload']:
-                    self.notifier.info(context, "hardware.ipmi.sel.metrics",
+                    self.notifier.info(context, "hardware.ipmi.temperature",
                                        message)
+
+    def _filter_out_unsupported_types_key(self, sensors_data, key):
+        # support the CONF.send_sensor_data_types sensor types only
+        allowed = set([key])
+        return dict((sensor_type, sensor_value) for (sensor_type, sensor_value)
+            in sensors_data.items() if sensor_type.lower() in allowed)
 
 
     def _filter_out_unsupported_types(self, sensors_data):
@@ -1325,7 +1367,8 @@ class ConductorManager(periodic_task.PeriodicTasks):
 
         if 'all' in allowed:
             return sensors_data
-
+        print allowed
+        print type(allowed)
         return dict((sensor_type, sensor_value) for (sensor_type, sensor_value)
             in sensors_data.items() if sensor_type.lower() in allowed)
 
