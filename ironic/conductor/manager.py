@@ -129,7 +129,7 @@ conductor_opts = [
                    default=1,
                    help='Seconds to sleep between node lock attempts.'),
         cfg.BoolOpt('send_sensor_data',
-                   default=True,
+                   default=False,
                    help='Enable sending sensor data message via the '
                         'notification bus'),
         cfg.IntOpt('send_sensor_data_interval',
@@ -143,11 +143,11 @@ conductor_opts = [
                         'special value meaning send all the sensor data.'
                         ),
         cfg.BoolOpt('send_sel_data',
-                   default=False,
+                   default=True,
                    help='Enable sending system event data message via the '
                         'notification bus'),
         cfg.IntOpt('send_sel_data_interval',
-                   default=4,
+                   default=20,
                    help='Seconds between conductor sending system event data message'
                         ' to ceilometer via the notification bus.'),
         cfg.ListOpt('send_sel_data_types',
@@ -1277,13 +1277,11 @@ class ConductorManager(periodic_task.PeriodicTasks):
             else:
 
                 message['payload'] = self._filter_out_unsupported_types_key(sensors_data, 'temperature')
-
-
                 if message['payload']:
                     self.notifier.info(context, "hardware.ipmi.temperature",
                                        message)
-                message2['payload'] = self._filter_out_unsupported_types_key(sensors_data, 'voltage')
 
+                message2['payload'] = self._filter_out_unsupported_types_key(sensors_data, 'voltage')
                 if message2['payload']:
                     self.notifier.info(context, "hardware.ipmi.voltage",
                                        message2)
@@ -1319,7 +1317,7 @@ class ConductorManager(periodic_task.PeriodicTasks):
                        'instance_uuid': instance_uuid,
                        'node_uuid': node_uuid,
                        'timestamp': datetime.datetime.utcnow(),
-                       'event_type': 'hardware.ipmi.temperature'}
+                       'event_type': 'hardware.ipmi.sel'}
 
             try:
                 with task_manager.acquire(context,
@@ -1350,8 +1348,9 @@ class ConductorManager(periodic_task.PeriodicTasks):
             else:
                 # message['payload'] = self._filter_out_unsupported_types(sensors_data)
                 message['payload'] = sel_data
+                print message['payload']
                 if message['payload']:
-                    self.notifier.info(context, "hardware.ipmi.temperature",
+                    self.notifier.info(context, "hardware.ipmi.sel",
                                        message)
 
     def _filter_out_unsupported_types_key(self, sensors_data, key):

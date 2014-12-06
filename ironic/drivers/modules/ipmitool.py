@@ -478,6 +478,25 @@ def _power_status(driver_info):
         return states.ERROR
 
 
+def _process_sel(sel_data):
+
+    element_arrary = sel_data[2:-3].split('|')
+    #levent_time=element_arrary[1]+element_arrary[2]
+    levent_name=element_arrary[3]+element_arrary[4]
+    # levent_name=levent_name.strip(' ').replace(' ','_')
+    # levent_volume=1
+    # if element_arrary[5].strip(' ').lower()== "asser":
+    #     levent_volume=1
+    # else:
+    #     if element_arrary[5].strip(' ').lower()=="deasser":
+    #         levent_volume=0
+    #     else:
+    #         levent_volume=2
+    # event_body=levent_time+"|"+str(levent_volume)+'|'+element_arrary[5].strip(' ')+'|'+sel_data[2:-3]
+    event_body=sel_data[2:-3]
+    return levent_name,event_body
+
+
 def _process_sensor(sensor_data):
     sensor_data_fields = sensor_data.split('\n')
     sensor_data_dict = {}
@@ -507,6 +526,55 @@ def _get_sensor_type(node, sensor_data_dict):
         node=node.uuid,
         error=(_("parse ipmi sensor data failed, unknown sensor type"
             " data: %(sensors_data)s"), {'sensors_data': sensor_data_dict}))
+
+
+def _parse_ipmi_sel_data(node, sel_data):
+    """Parse the IPMI sensors data and format to the dict grouping by type.
+
+    We run 'ipmitool' command with 'sdr -v' options, which can return sensor
+    details in human-readable format, we need to format them to JSON string
+    dict-based data for Ceilometer Collector which can be sent it as payload
+    out via notification bus and consumed by Ceilometer Collector.
+
+    :param sel_data: the sensor data returned by ipmitool command.
+    :returns: the sel data with JSON format, grouped by sensor type.
+    :raises: FailedToParselData when error encountered during parsing.
+
+    """
+    sels_data_dict = {}
+    package_dic={}
+    event_name="N"
+    if not sel_data:
+        return sels_data_dict
+
+    sels_data_array = sel_data.split('\n')
+    for sel_data in sels_data_array:
+        try:
+            event_name,sel_event = _process_sel(sel_data)
+
+        except Exception as e:
+            continue
+            LOG.warn(_LW("Failed to get sensor data for node %(node)s. "
+                "Error: %(error)s"), {'node': node_uuid, 'error': str(e)})
+        if len(event_name)>0:
+            sels_data_dict[event_name]=sel_event
+
+
+    #     sensor_type = _get_sensor_type(node, sensor_data_dict)
+    #
+    #     # ignore the sensors which has no current 'Sensor Reading' data
+    #     if 'Sensor Reading' in sensor_data_dict:
+    #         sensors_data_dict.setdefault(sensor_type,
+    #             {})[sensor_data_dict['Sensor ID']] = sensor_data_dict
+    #
+    # # get nothing, no valid sensor data
+    if not sels_data_dict:
+        raise exception.FailedToParseSensorData(
+            node=node.uuid,
+            error=(_("parse ipmi sensor data failed, get nothing with input"
+                " data: %(sensors_data)s") % {'sensors_data': sel_data}))
+    package_dic['sel']=sels_data_dict
+    return package_dic
 
 
 def _parse_ipmi_sensors_data(node, sensors_data):
@@ -782,7 +850,7 @@ class IPMIManagement(base.ManagementInterface):
 
         # return _parse_ipmi_sensors_data(task.node, out)
 
-        return out
+        return _parse_ipmi_sel_data(task.node,out)
         # raise NotImplementedError()
 
 
