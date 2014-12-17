@@ -129,11 +129,11 @@ conductor_opts = [
                    default=1,
                    help='Seconds to sleep between node lock attempts.'),
         cfg.BoolOpt('send_sensor_data',
-                   default=False,
+                   default=True,
                    help='Enable sending sensor data message via the '
                         'notification bus'),
         cfg.IntOpt('send_sensor_data_interval',
-                   default=10,
+                   default=600,
                    help='Seconds between conductor sending sensor data message'
                         ' to ceilometer via the notification bus.'),
         cfg.ListOpt('send_sensor_data_types',
@@ -147,7 +147,7 @@ conductor_opts = [
                    help='Enable sending system event data message via the '
                         'notification bus'),
         cfg.IntOpt('send_sel_data_interval',
-                   default=20,
+                   default=600,
                    help='Seconds between conductor sending system event data message'
                         ' to ceilometer via the notification bus.'),
         cfg.ListOpt('send_sel_data_types',
@@ -1296,6 +1296,14 @@ class ConductorManager(periodic_task.PeriodicTasks):
                     self.notifier.info(context, "hardware.ipmi.current",
                                        message4)
 
+    def add_event_level(self,content):
+        if content.lower().find("error") >-1:
+            return content+'#0'
+        if content.lower().find("warning") >-1:
+            return content+"#1"
+        else:
+            return content+"#2"
+
     @periodic_task.periodic_task(
             spacing=CONF.conductor.send_sel_data_interval)
     def _send_sel_data(self, context):
@@ -1313,11 +1321,36 @@ class ConductorManager(periodic_task.PeriodicTasks):
                 continue
 
             # populate the message which will be sent to ceilometer
-            message = {'message_id': ironic_utils.generate_uuid(),
+            message_os = {'message_id': ironic_utils.generate_uuid(),
                        'instance_uuid': instance_uuid,
                        'node_uuid': node_uuid,
                        'timestamp': datetime.datetime.utcnow(),
-                       'event_type': 'hardware.ipmi.sel'}
+                       'event_type': 'hardware.ipmi.sel.os'}
+            message_hw = {'message_id': ironic_utils.generate_uuid(),
+                       'instance_uuid': instance_uuid,
+                       'node_uuid': node_uuid,
+                       'timestamp': datetime.datetime.utcnow(),
+                       'event_type': 'hardware.ipmi.sel.hw'}
+
+            message_fan = {'message_id': ironic_utils.generate_uuid(),
+                       'instance_uuid': instance_uuid,
+                       'node_uuid': node_uuid,
+                       'timestamp': datetime.datetime.utcnow(),
+                       'event_type': 'hardware.ipmi.sel.fan'}
+
+            message_temperature = {'message_id': ironic_utils.generate_uuid(),
+                       'instance_uuid': instance_uuid,
+                       'node_uuid': node_uuid,
+                       'timestamp': datetime.datetime.utcnow(),
+                       'event_type': 'hardware.ipmi.temperature'}
+
+            message_other = {'message_id': ironic_utils.generate_uuid(),
+                       'instance_uuid': instance_uuid,
+                       'node_uuid': node_uuid,
+                       'timestamp': datetime.datetime.utcnow(),
+                       'event_type': 'hardware.ipmi.sel.other'}
+
+
 
             try:
                 with task_manager.acquire(context,
@@ -1326,6 +1359,40 @@ class ConductorManager(periodic_task.PeriodicTasks):
                     task.driver.management.validate(task)
                     sel_data = task.driver.management.get_sel_data(
                         task)
+                    power_data={}
+                    fan_data={}
+                    os_data={}
+                    driver_data={}
+                    temperature_data={}
+                    other_data={}
+                    sel_data_dat=sel_data['sel']
+                    keys=sel_data_dat.keys()
+                    for key in keys:
+                        key = self.add_event_level(key)
+                        if key.lower().find("power") >-1:
+                            content = sel_data_dat[key]
+                            power_data[key]=content
+                            continue
+                        if key.lower().find("temperature") ==1:
+                            content = sel_data_dat[key]
+                            temperature_data[key]=(content)
+
+                            continue
+                        if key.lower().find("fan") ==1:
+                            content = sel_data_dat[key]
+                            fan_data[key]=(content)
+                            continue
+                        if key.lower().find("os") ==1:
+                            content = sel_data_dat[key]
+                            os_data[key]=(content)
+                            continue
+                        if key.lower().find("driver") ==1:
+                            content = sel_data_dat[key]
+                            driver_data[key]=(content)
+                            continue
+                        other_data[key]=(sel_data_dat[key])
+                        continue
+
             except NotImplementedError:
                 LOG.warn(_LW('get_sensors_data is not implemented for driver'
                     ' %(driver)s, node_uuid is %(node)s'),
@@ -1347,11 +1414,35 @@ class ConductorManager(periodic_task.PeriodicTasks):
                     "Error: %(error)s"), {'node': node_uuid, 'error': str(e)})
             else:
                 # message['payload'] = self._filter_out_unsupported_types(sensors_data)
-                message['payload'] = sel_data
-                print message['payload']
-                if message['payload']:
-                    self.notifier.info(context, "hardware.ipmi.sel",
-                                       message)
+                message_os['payload'] = {"os":os_data}
+                if message_os['payload']:
+
+                    self.notifier.info(context, "hardware.ipmi.sel.os",
+                                       message_os)
+
+                message_hw['payload'] = {"hw":driver_data}
+                if message_hw['payload']:
+                    self.notifier.info(context, "hardware.ipmi.sel.hw",
+                                       message_hw)
+
+                message_fan['payload'] = {"fan":fan_data}
+                if message_fan['payload']:
+                    self.notifier.info(context, "hardware.ipmi.sel.fan",
+                                       message_fan)
+
+                message_temperature['payload'] = {"temperature":temperature_data}
+                if message_temperature['payload']:
+                    self.notifier.info(context, "hardware.ipmi.sel.temperature",
+                                       message_temperature)
+
+                message_other['payload'] = {"other":other_data}
+                if message_other['payload']:
+                    self.notifier.info(context, "hardware.ipmi.sel.other",
+                                       message_other)
+
+
+
+
 
     def _filter_out_unsupported_types_key(self, sensors_data, key):
         # support the CONF.send_sensor_data_types sensor types only
@@ -1366,8 +1457,6 @@ class ConductorManager(periodic_task.PeriodicTasks):
 
         if 'all' in allowed:
             return sensors_data
-        print allowed
-        print type(allowed)
         return dict((sensor_type, sensor_value) for (sensor_type, sensor_value)
             in sensors_data.items() if sensor_type.lower() in allowed)
 
