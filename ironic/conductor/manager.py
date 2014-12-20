@@ -1342,7 +1342,7 @@ class ConductorManager(periodic_task.PeriodicTasks):
                        'instance_uuid': instance_uuid,
                        'node_uuid': node_uuid,
                        'timestamp': datetime.datetime.utcnow(),
-                       'event_type': 'hardware.ipmi.temperature'}
+                       'event_type': 'hardware.ipmi.sel.temperature'}
 
             message_other = {'message_id': ironic_utils.generate_uuid(),
                        'instance_uuid': instance_uuid,
@@ -1368,29 +1368,32 @@ class ConductorManager(periodic_task.PeriodicTasks):
                     sel_data_dat=sel_data['sel']
                     keys=sel_data_dat.keys()
                     for key in keys:
-                        key = self.add_event_level(key)
+                        new_key = self.add_event_level(key)
                         if key.lower().find("power") >-1:
                             content = sel_data_dat[key]
-                            power_data[key]=content
+                            power_data[new_key]=content
                             continue
-                        if key.lower().find("temperature") ==1:
+                        if key.lower().find("temperature") >-1:
                             content = sel_data_dat[key]
-                            temperature_data[key]=(content)
-
+                            temperature_data[new_key]=content
                             continue
-                        if key.lower().find("fan") ==1:
+                        if key.lower().find("drive") >-1:
                             content = sel_data_dat[key]
-                            fan_data[key]=(content)
+                            driver_data[new_key]=content
                             continue
-                        if key.lower().find("os") ==1:
+                        if key.lower().find("fan") >-1:
                             content = sel_data_dat[key]
-                            os_data[key]=(content)
+                            fan_data[new_key]=content
                             continue
-                        if key.lower().find("driver") ==1:
+                        if key.lower().find("os") >-1:
                             content = sel_data_dat[key]
-                            driver_data[key]=(content)
+                            os_data[new_key]=content
                             continue
-                        other_data[key]=(sel_data_dat[key])
+                        if key.lower().find("driver") >-1:
+                            content = sel_data_dat[key]
+                            driver_data[new_key]=content
+                            continue
+                        other_data[new_key]=(sel_data_dat[key])
                         continue
 
             except NotImplementedError:
@@ -1439,10 +1442,6 @@ class ConductorManager(periodic_task.PeriodicTasks):
                 if message_other['payload']:
                     self.notifier.info(context, "hardware.ipmi.sel.other",
                                        message_other)
-
-
-
-
 
     def _filter_out_unsupported_types_key(self, sensors_data, key):
         # support the CONF.send_sensor_data_types sensor types only
